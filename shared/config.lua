@@ -1,294 +1,358 @@
+local ESX, QBCore = nil
+local xPlayer = nil
+local identifier = nil
+
+
+if Config.Framework == "esx" then
+    ESX = exports['es_extended']:getSharedObject()
+else
+    QBCore = exports['qb-core']:GetCoreObject()
+end
+
 lib.locale()
 
-Config = {}
+lib.callback.register('gary_garage:server:checkOwner', function(source, plate)
+    local plate = string.gsub(plate, ' ', '')
 
-Config.UseRadialMenu = false
+    if Config.Framework == "esx" then
+        result = CustomSQL('query', 'SELECT owner FROM owned_vehicles WHERE REPLACE(plate, " ", "") = ?', {plate})
+        if #result > 0 then
+            return result[1].owner
+        end
+    else
+        result = CustomSQL('query', 'SELECT citizenid FROM player_vehicles WHERE REPLACE(plate, " ", "") = ?', {plate})
+        if #result > 0 then
+            return result[1].citizenid
+        end
+    end
+end)
 
-Config.AccessDistance = 3.0
+lib.callback.register('gary_garage:server:getVehicles', function(source, job, type)
+    if Config.Framework == "esx" then
+        xPlayer = ESX.GetPlayerFromId(source)
+        identifier = xPlayer.getIdentifier()
+    else
+        xPlayer = QBCore.Functions.GetPlayer(source)
+        identifier = xPlayer.PlayerData.citizenid
+    end
 
-Config.StoreDistance = 10.0
+    local result
 
-Config.MySQL = 'oxmysql' -- 'mysql-async', 'oxmysql', 'ghmattisql'
+    if job then
+        if Config.Framework == "esx" then
+            result = CustomSQL('query', 'SELECT * FROM owned_vehicles WHERE owner = ? AND job = ? AND type = ? ORDER BY stored DESC',
+                {identifier, job, type})
+        else
+            result = CustomSQL('query', 'SELECT * FROM player_vehicles WHERE citizenid = ? AND job = ? AND type = ? ORDER BY state DESC',
+                {identifier, job, type})
+        end
+    else
+        if Config.Framework == "esx" then
+            result = CustomSQL('query', 'SELECT * FROM owned_vehicles WHERE owner = ? AND type = ? ORDER BY stored DESC', {identifier, type})
+        else
+            result = CustomSQL('query', 'SELECT * FROM player_vehicles WHERE citizenid = ? AND type = ? ORDER BY state DESC', {identifier, type})
+        end
+    end
 
-Config.FuelSystem = 'custom' -- 'LegacyFuel', 'ox_fuel', 'custom' (client/main.lua:98 to set a custom export)
 
-Config.KeySystem = 'custom'
+    return result
+end)
 
-Config.PedEnabled = true
+lib.callback.register('gary_garage:server:getImpoundedVehicles', function(source, type)
+    if Config.Framework == "esx" then
+        xPlayer = ESX.GetPlayerFromId(source)
+        identifier = xPlayer.getIdentifier()
+    else
+        xPlayer = QBCore.Functions.GetPlayer(source)
+        identifier = xPlayer.PlayerData.citizenid
+    end
 
-Config.JobGarajesEnabled = true
+    if Config.Framework == "esx" then
+        result = CustomSQL('query', 'SELECT * FROM owned_vehicles WHERE owner = ? and impound = 1 and type = ?', {identifier, type})
+    else
+        result = CustomSQL('query', 'SELECT * FROM player_vehicles WHERE citizenid = ? and impound = 1 and type = ?', {identifier, type})
+    end
+    return result
+end)
 
-Config.JobVehicleShopEnabled = true
+lib.callback.register('gary_garage:server:canPay', function(source, amount)
+    if Config.Framework == "esx" then
+        xPlayer = ESX.GetPlayerFromId(source)
+        identifier = xPlayer.getIdentifier()
+    else
+        xPlayer = QBCore.Functions.GetPlayer(source)
+        identifier = xPlayer.PlayerData.citizenid
+    end
 
-Config.ImpoundCommandEnabled = true
+    if Config.ImpoundTakeMoneyType == "bank" then
+        PlayerMoney = xPlayer.PlayerData.money.bank -- Get the Current Player`s Balance.
+        MoneyType = "bank"
+    else
+        PlayerMoney = xPlayer.PlayerData.money.cash -- Get the Current Player`s Balance.
+        MoneyType = "cash"
+    end
 
-Config.ImpoundCommand = {
-    command = 'impound',
-    radius = 2.0,
-    jobs = { -- jobs with access to this command 
-        'police'
-    }
-}
+    if PlayerMoney >= amount then -- check if the Player`s Money is more or equal to the cost.
+        xPlayer.Functions.RemoveMoney(MoneyType ,amount) -- remove Cost from balance
+        return true
+    else
+        return false
+    end
+    
+end)
 
-Config.ImpoundFine = {
-    ['car'] = 50,
-    ['boat'] = 1000,
-    ['plane'] = 3000,
-}
+lib.callback.register('gary_garage:server:getVehicle', function(source, plate)
+    local plate = string.gsub(plate, ' ', '')
 
-Config.TransferVehiclePrice = {
-    ['car'] = 200,
-    ['boat'] = 10000,
-    ['plane'] = 4000,
-}
+    if Config.Framework == "esx" then
+        xPlayer = ESX.GetPlayerFromId(source)
+        identifier = xPlayer.getIdentifier()
+    else
+        xPlayer = QBCore.Functions.GetPlayer(source)
+        identifier = xPlayer.PlayerData.citizenid
+    end
 
-Config.DefaultPed = {
-    ['car'] = {
-        model = 's_m_m_dockwork_01',
-        task = 'WORLD_HUMAN_CLIPBOARD' --animation https://gtaforums.com/topic/796181-list-of-scenarios-for-peds/
-    },
-    ['plane'] = {
-        model = 's_m_y_airworker',
-        task = 'WORLD_HUMAN_CLIPBOARD' --animation https://gtaforums.com/topic/796181-list-of-scenarios-for-peds/
-    },
-    ['boat'] = {
-        model = 's_m_y_baywatch_01',
-        task = 'WORLD_HUMAN_CLIPBOARD' --animation https://gtaforums.com/topic/796181-list-of-scenarios-for-peds/
-    }
-}
+    if Config.Framework == "esx" then
+        result = CustomSQL('query', 'SELECT * FROM owned_vehicles WHERE REPLACE(plate, " ", "") = ? and owner = ?', {plate, identifier})
+    else
+        result = CustomSQL('query', 'SELECT * FROM player_vehicles WHERE REPLACE(plate, " ", "") = ? and citizenid = ?', {plate, identifier})
 
-Config.GarageBlip = {
-    ['car'] = {
-        sprite = 357,
-        scale = 0.8,
-        colour = 18
-    },
-    ['plane'] = {
-        sprite = 569,
-        scale = 0.8,
-        colour = 18
-    },
-    ['boat'] = {
-        sprite = 473,
-        scale = 0.8,
-        colour = 18
-    }
-}
+    end
 
-Config.ImpoundBlip = {
-    sprite = 317,
-    scale = 0.8,
-    colour = 6
-}
+    return result[1]
+end)
 
-Config.VehiclesNames = {
-    -- ['model'] = 'Vehicle Name',
-}
+RegisterServerEvent('gary_garage:server:updateVehicle', function(plate, vehicle, parking, stored, type)
+    if Config.Framework == "esx" then
+        xPlayer = ESX.GetPlayerFromId(source)
+        identifier = xPlayer.getIdentifier()
+    else
+        xPlayer = QBCore.Functions.GetPlayer(source)
+        identifier = xPlayer.PlayerData.citizenid
+    end
 
-Config.JobVehicles = {
-    ['police'] = {
-        ['police'] = {price = 1000},
-        ['police2'] = {price = 1000},
-        ['police3'] = {price = 1000},
-    },
-    ['ambulance'] = {
-        ['ambulance'] = {price = 1000},
-    },
-    ['miner'] = {
-        ['sadler'] = {price = 1000000},
-    },
-    ['taxi'] = {
-        ['taxi'] = {price = 1000000},
-    },
-    ['mechanic'] = {
-        ['towtruck'] = {price = 1000000},
-    }
-}
+    if Config.Framework == "esx" then
+        CustomSQL('update', 'UPDATE owned_vehicles SET vehicle = ?, parking = ?, stored = ?, impound = 0 WHERE REPLACE(plate, " ", "") = ? and owner = ?', {vehicle, parking, stored, plate, identifier})
+    else
+        CustomSQL('update', 'UPDATE player_vehicles SET mods = ?,type = ?, garage = ?, state = ?, impound = 0 WHERE REPLACE(plate, " ", "") = ? and citizenid = ?', 
+        {vehicle, type ,parking , stored , plate, identifier})
 
-Config.JobGarajes = {
-    ['police'] = {
-        ped = {
-            model = 'csb_trafficwarden',
-            task = 'WORLD_HUMAN_STAND_MOBILE_UPRIGHT'
-        },
-        locations = {
-            ['vespucci_police'] = {
-                blip = { -- only visible to those who have the job
-                    label = locale('police_garage_blip'),
-                    sprite = 357,
-                    scale = 0.8,
-                    colour = 29
-                },
-                access = vec4(440.3128, -1013.3806, 28.6250, 152.6308),
-                store = vec4(423.4687, -1021.6505, 28.9481, 88.9128),
-                spawn = vec4(450.7397, -1019.5090, 28.4583, 92.3000),
-                type = 'car'
+    end 
+end)
+
+RegisterServerEvent('gary_garage:server:buyVehicle', function(plate, vehicle, parking, job, type)
+    if Config.Framework == "esx" then
+        xPlayer = ESX.GetPlayerFromId(source)
+        identifier = xPlayer.getIdentifier()
+    else
+        xPlayer = QBCore.Functions.GetPlayer(source)
+        identifier = xPlayer.PlayerData.citizenid
+    end
+
+    if Config.Framework == "esx" then
+        CustomSQL('insert',
+            'INSERT INTO owned_vehicles (owner, plate, vehicle, type, stored, parking, impound, job) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+            {identifier, plate, json.encode(vehicle), 'car', 1, parking, 0, job})
+    else
+        CustomSQL('insert',
+            'INSERT INTO player_vehicles (license, citizenid, vehicle, hash ,mods ,plate, type, state, garage, impound, job) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+            {xPlayer.PlayerData.license, xPlayer.PlayerData.citizenid, vehicle.model, GetHashKey(vehicle.model), json.encode(vehicle), plate, type, 1, parking, 0, job})
+    end
+end)
+
+RegisterServerEvent('gary_garage:server:setVehicleOut', function(plate)
+    local src = source
+    local xPlayer, identifier
+
+    if Config.Framework == "esx" then
+        xPlayer = ESX.GetPlayerFromId(src)
+        identifier = xPlayer.getIdentifier()
+    else
+        xPlayer = QBCore.Functions.GetPlayer(src)
+        identifier = xPlayer.PlayerData.citizenid
+    end
+
+    if xPlayer and identifier then
+        if Config.Framework == "esx" then
+            CustomSQL('update',
+                'UPDATE owned_vehicles SET stored = 0, parking = NULL, impound = 0 WHERE REPLACE(plate, " ", "") = ? and owner = ?',
+                {plate, identifier})
+        else
+            CustomSQL('update',
+                'UPDATE player_vehicles SET state = 0, garage = NULL, impound = 0 WHERE REPLACE(plate, " ", "") = ? and citizenid = ?',
+                {plate, identifier})
+        end
+
+        local playerName = GetPlayerName(src)
+        local playerLicense = xPlayer.PlayerData.license
+
+        if playerName and playerLicense then
+            discordLog(
+                playerName .. ' - ' .. playerLicense .. ' - ' .. identifier,
+                playerName .. ' - ' .. playerLicense .. ' - ' .. identifier .. ' took their car out of the garage. Plate: ' .. plate,
+                Config.Webhook['setVehicleOut']
+            )
+        else
+            print("Error: Could not retrieve player name or license.")
+        end
+    else
+        print("Error: Could not retrieve player information.")
+    end
+end)
+
+RegisterServerEvent('gary_garage:server:setVehicleParking', function(plate, parking)
+    local src = source
+    local xPlayer, identifier
+
+    if Config.Framework == "esx" then
+        xPlayer = ESX.GetPlayerFromId(src)
+        identifier = xPlayer.getIdentifier()
+    else
+        xPlayer = QBCore.Functions.GetPlayer(src)
+        identifier = xPlayer.PlayerData.citizenid
+    end
+
+    if xPlayer and identifier then
+        if Config.Framework == "esx" then
+            CustomSQL('update', 'UPDATE owned_vehicles SET stored = 1, parking = ?, impound = 0 WHERE plate = ? and owner = ?',
+                {parking, plate, identifier})
+        else
+            CustomSQL('update', 'UPDATE player_vehicles SET state = 1, garage = ?, impound = 0 WHERE plate = ? and citizenid = ?',
+                {parking, plate, identifier})
+        end
+
+        local playerName = GetPlayerName(src)
+        local playerLicense = xPlayer.PlayerData.license
+
+        if playerName and playerLicense then
+            discordLog(
+                playerName .. ' - ' .. playerLicense .. ' - ' .. identifier,
+                playerName .. ' - ' .. playerLicense .. ' - ' .. identifier .. ' parked their car. Plate: ' .. plate,
+                Config.Webhook['setVehicleParking']
+            )
+        else
+            print("Error: Could not retrieve player name or license.")
+        end
+    else
+        print("Error: Could not retrieve player information.")
+    end
+end)
+
+RegisterServerEvent('gary_garage:server:setVehicleImpound', function(plate, impound)
+    local src = source
+    local xPlayer, identifier
+
+    if Config.Framework == "esx" then
+        xPlayer = ESX.GetPlayerFromId(src)
+        identifier = xPlayer.getIdentifier()
+    else
+        xPlayer = QBCore.Functions.GetPlayer(src)
+        identifier = xPlayer.PlayerData.citizenid
+    end
+
+    if xPlayer and identifier then
+        if Config.Framework == "esx" then
+            CustomSQL('update', 'UPDATE owned_vehicles SET parking = NULL, stored = 0, impound = ? WHERE plate = ? and owner = ?',
+                {impound, plate, identifier})
+        else
+            CustomSQL('update', 'UPDATE player_vehicles SET garage = NULL, state = 0, impound = ? WHERE plate = ? and citizenid = ?',
+                {impound, plate, identifier})
+        end
+
+        local playerName = GetPlayerName(src)
+        local playerLicense = xPlayer.PlayerData.license
+
+        if playerName and playerLicense then
+            discordLog(
+                playerName .. ' - ' .. playerLicense .. ' - ' .. identifier,
+                playerName .. ' - ' .. playerLicense .. ' - ' .. identifier .. ' moved their car to the impound. Plate: ' .. plate,
+                Config.Webhook['setVehicleImpound']
+            )
+        else
+            print("Error: Could not retrieve player name or license.")
+        end
+    else
+        print("Error: Could not retrieve player information.")
+    end
+end)
+
+lib.callback.register('gary_garage:setPlayerRoutingBucket', function(source, bucket)
+    if not bucket then
+        bucket = math.random(1000)
+    end
+
+    SetPlayerRoutingBucket(source, bucket)
+    return true
+end)
+
+if Config.ImpoundCommandEnabled then
+    if Config.Framework == "esx" then
+        ESX.RegisterCommand(Config.ImpoundCommand.command, 'user', function(xPlayer, args, showError)
+            for k, job in pairs(Config.ImpoundCommand.jobs) do
+                if xPlayer.getJob().name == job then
+                    xPlayer.triggerEvent('gary_garage:impoundVehicle')
+                end
+            end
+        end, false, {
+            help = locale('command_impound')
+        })
+    else
+        RegisterCommand(Config.ImpoundCommand.command, function(source, args)
+            local xPlayer = QBCore.Functions.GetPlayer(source)
+        
+            for _, job in pairs(Config.ImpoundCommand.jobs) do
+                if xPlayer.PlayerData.job.name == job then
+                    TriggerClientEvent('gary_garage:impoundVehicle', source)
+                    return
+                end
+            end
+            TriggerClientEvent('gary_garage:notification', locale('command_impound'), 5500, "success")
+        end)
+    end
+end
+
+function CustomSQL(type, action, placeholder)
+    local result = nil
+    if Config.MySQL == 'oxmysql' then
+        if type == 'query' then
+            result = exports.oxmysql:query_async(action, placeholder)
+        elseif type == 'update' then
+            result = exports.oxmysql:update(action, placeholder)
+        elseif type == 'insert' then
+            result = exports.oxmysql:insert(action, placeholder)
+        end
+    elseif Config.MySQL == 'mysql-async' then
+        if type == 'query' then
+            result = MySQL.Sync.query(action, placeholder)
+        elseif type == 'update' then
+            result = MySQL.Async.execute(action, placeholder)
+        elseif type == 'insert' then
+            result = MySQL.Async.insert(action, placeholder)
+        end
+    elseif Config.MySQL == 'ghmattisql' then
+        if type == 'query' then
+            result = exports.ghmattimysql:executeSync(action, placeholder)
+        elseif type == 'update' then
+            result = exports.ghmattimysql:execute(action, placeholder)
+        elseif type == 'insert' then
+            result = exports.ghmattimysql:execute(action, placeholder)
+        end
+    end
+    return result
+end
+
+function discordLog(name, message, webhookURL)
+    if webhookURL and webhookURL ~= "" then
+        local data = {
+            {
+                ["color"] = 3553600,
+                ["title"] = "**Gary's Garage**",
+                ["description"] = message,
             }
         }
-    },
-    ['ambulance'] = {
-        ped = {
-            model = 'csb_trafficwarden',
-            task = 'WORLD_HUMAN_STAND_MOBILE_UPRIGHT'
-        },
-        locations = {
-            ['strawberry_ambulance'] = {
-                blip = {
-                    label = locale('ambulance_garage_blip'),
-                    sprite = 357,
-                    scale = 0.8,
-                    colour = 6
-                },
-                access = vec4(353.1519, -603.6036, 28.7761, 267.1620),
-                store = vec4(365.2415, -591.6791, 28.6921, 343.2072),
-                spawn = vec4(380.5848, -585.6525, 28.6481, 201.6172),
-                type = 'car'
-            }
-        }
-    },
-    ['miner'] = {
-        ped = {
-            model = 's_m_m_dockwork_01',
-            task = 'WORLD_HUMAN_STAND_MOBILE_UPRIGHT'
-        },
-        locations = {
-            ['orchardville_miner'] = {
-                blip = {
-                    label = locale('miner_garage_blip'),
-                    sprite = 357,
-                    scale = 0.8,
-                    colour = 5
-                },
-                access = vec4(870.4711, -2366.2339, 30.3462, 356.0012),
-                store = vec4(880.8738, -2350.4807, 30.3312, 87.9480),
-                spawn = vec4(843.8577, -2346.4854, 30.3346, 265.2579),
-                type = 'car'
-            }
-        }
-    },
-    ['taxi'] = {
-        ped = {
-            model = 'u_m_y_proldriver_01',
-            task = 'WORLD_HUMAN_STAND_MOBILE_UPRIGHT'
-        },
-        locations = {
-            ['tangerine_taxi'] = {
-                blip = {
-                    label = locale('taxi_garage_blip'),
-                    sprite = 357,
-                    scale = 0.8,
-                    colour = 5
-                },
-                access = vec4(918.7134, -160.3715, 74.9114, 142.9251),
-                store = vec4(910.5366, -177.4915, 74.2616, 237.7346),
-                spawn = vec4(902.5016, -184.1103, 73.8883, 332.9777),
-                type = 'car'
-            }
-        }
-    },
-    ['mechanic'] = {
-        ped = {
-            model = 's_m_m_dockwork_01',
-            task = 'WORLD_HUMAN_STAND_MOBILE_UPRIGHT'
-        },
-        locations = {
-            ['olympic_mechanic'] = {
-                blip = {
-                    label = locale('mechanic_garage_blip'),
-                    sprite = 357,
-                    scale = 0.8,
-                    colour = 39
-                },
-                access = vec4(-192.9804, -1290.3110, 31.2965, 272.3626),
-                store = vec4(-182.0340, -1301.9659, 31.2965, 272.7176),
-                spawn = vec4(-160.9252, -1301.6703, 31.3432, 89.9771),
-                type = 'car'
-            }
-        }
-    }
-}
-
-Config.Garages = {
-    ['elgin'] = {
-        access = vec4(214.5288, -807.0486, 30.8031, 342.1742),
-        store = vec4(216.8447, -786.5744, 30.8161, 340.5844),
-        spawn = vec4(230.7546, -795.9514, 30.5859, 160.6045),
-        type = 'car',
-        blip = true
-    },
-    ['aguja'] = {
-        access = vec4(-1183.1499, -1508.2714, 4.3797, 308.6074),
-        store = vec4(-1191.9292, -1492.1295, 4.3797, 33.9222),
-        spawn = vec4(-1177.7272, -1483.6582, 4.3797, 211.5811),
-        type = 'car',
-        blip = true
-    },
-    ['shambles'] = {
-        access = vec4(996.9217, -2360.1174, 30.5096, 351.5527),
-        store = vec4(1015.7012, -2331.0493, 30.5096, 172.7233),
-        spawn = vec4(1013.7295, -2364.3025, 30.5096, 352.7007),
-        type = 'car',
-        blip = true
-    },
-    ['eclipse'] = {
-        access = vec4(-570.7280, 310.9371, 84.4977, 355.5518),
-        store = vec4(-567.1437, 329.4330, 84.4461, 84.1943),
-        spawn = vec4(-607.3918, 337.1939, 85.1167, 263.8757),
-        type = 'car',
-        blip = true
-    },
-    ['great_ocean'] = {
-        access = vec4(-200.1778, 6234.4956, 31.5027, 235.2995),
-        store = vec4(-200.5813, 6214.3184, 31.4893, 45.7559),
-        spawn = vec4(-193.0426, 6225.6099, 31.4897, 141.6068),
-        type = 'car',
-        blip = true
-    },
-    ['panorama_drive'] = {
-        access = vec4(1649.2954, 3567.1265, 35.3912, 45.3013),
-        store = vec4(1634.6001, 3565.2202, 35.2683, 117.2702),
-        spawn = vec4(1608.8293, 3602.7205, 35.1463, 30.0080),
-        type = 'car',
-        blip = true
-    },
-    ['new_empire'] = {
-        access = vec4(-942.2376, -2956.1157, 13.9451, 129.7652),
-        store = vec4(-974.9199, -2997.5334, 13.9450, 240.2666),
-        spawn = vec4(-974.8014, -3298.9353, 14.0472, 65.6655),
-        type = 'plane',
-        blip = true
-    }
-}
-
-Config.Impounds = {
-    ['innocence'] = {
-        access = vec4(409.2835, -1623.0498, 29.2919, 232.2472),
-        spawn = vec4(407.1664, -1645.2323, 29.2919, 228.8734),
-        type = 'car',
-        blip = true
-    },
-    ['vespucci'] = {
-        access = vec4(-1057.9415, -840.6771, 5.0427, 214.2390),
-        spawn = vec4(-1052.3311, -856.4564, 4.8715, 127.4942),
-        type = 'car',
-        blip = true
-    },
-    ['paleto'] = {
-        access = vec4(-456.8438, 6017.9258, 31.4901, 38.0822),
-        spawn = vec4(-467.4146, 6015.9771, 31.3405, 312.0559),
-        type = 'car',
-        blip = true
-    },
-    ['zancudo'] = {
-        access = vec4(1852.5085, 3706.8975, 33.2539, 30.6991),
-        spawn = vec4(1864.8422, 3700.9099, 33.5391, 214.8698),
-        type = 'car',
-        blip = true
-    },
-    ['pista_1'] = {
-        access = vec4(-1229.4432, -3377.8064, 13.9450, 332.6432),
-        spawn = vec4(-1270.8102, -3376.1331, 13.9401, 329.9285),
-        type = 'plane',
-        blip = true
-    },
-}
+        PerformHttpRequest(webhookURL, function(err, text, headers)
+        end, 'POST', json.encode({username = "Gary's Garage", embeds = data}), { ['Content-Type'] = 'application/json' })
+    else
+        print("Invalid webhook URL: "..tostring(webhookURL))
+    end
+end

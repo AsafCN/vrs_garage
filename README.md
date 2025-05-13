@@ -18,6 +18,7 @@ Optimized garage system
 
 ## Dependencies
  - [ESX (any version)](https://github.com/esx-framework/esx_core/releases)
+ - [QBcore (any version)](https://github.com/qbcore-framework/qb-core)
  - [ox_lib](https://github.com/overextended/ox_lib/releases)
 
 

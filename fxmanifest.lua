@@ -1,25 +1,26 @@
-fx_version 'cerulean'
+fx_version "bodacious"
 
-game 'gta5'
+game "gta5"
+
+author "Gary/VRS"
 
 description 'Simple Garage System'
 lua54 'yes'
-version 'v1.6.2'
+version 'V2'
 
-author 'VRS'
 
 shared_scripts { 
 	'@ox_lib/init.lua',
-	'shared/config.lua'
+	"shared/*.lua",
 }
 
 client_scripts {
-	'client/main.lua',
+	"client/*.lua",
 }
 
 server_scripts {
 	'@mysql-async/lib/MySQL.lua',
-	'server/main.lua'
+	"server/*.lua",
 }
 
 files {
